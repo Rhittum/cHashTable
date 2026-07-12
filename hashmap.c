@@ -27,8 +27,8 @@
 	} while (0)
 
 typedef enum {
+	EMPTY = 0,
 	OCCUPIED,
-	EMPTY,
 	DELETED
 } SlotState;
 
@@ -113,7 +113,7 @@ uint32_t getBucketIndex(HashMap *map, const char *key) {
 
 	uint64_t hash = siphash13((const uint8_t*)key, len, map->secretKey[0], map->secretKey[1]);
 
-	fmix64(hash);
+	hash = fmix64(hash);
 
 	return (uint32_t)(hash & (map->capacity - 1));
 }
@@ -131,10 +131,13 @@ HashMap* createTable(int capacity) {
 
 	HashMap* map = malloc(sizeof(HashMap));
 	if (!map) return NULL;
-
 	map->capacity = capacity;
 	map->size = 0;
 	map->buckets = calloc(capacity, sizeof(HashEntry));
+	if (!map->buckets) {
+		free(map);
+		return NULL;
+	}
 	if (get_secure_random_bytes(map->secretKey, sizeof(map->secretKey)) != 0) {
 		// Fallback: If OS secure random generation fails
 		#include <time.h>
@@ -211,7 +214,7 @@ void* map_get(HashMap *map, const char *key) {
 			return NULL;
 		}
 
-		if (slot->psl == OCCUPIED && strcmp(slot->key, key)==0) {
+		if (slot->state == OCCUPIED && strcmp(slot->key, key)==0) {
 			return slot->value;
 		}
 		bucketIdx = (bucketIdx+1)&(map->capacity-1);
@@ -240,5 +243,15 @@ void resize(HashMap *map, uint32_t new_capacity) {
 }
 
 int main() {
+	HashMap *map = createTable(20);
+
+	map_insert(map, "Rin", "1");
+	map_insert(map, "Apple", "2");
+	map_insert(map, "Bees", "33");
+
+	char *value = (char*)map_get(map, "Apple");
+	printf("value: %s\n",value);
+	value = (char*)map_get(map, "Bees");
+	printf("value: %s\n",value);
 	return 0;
 }
