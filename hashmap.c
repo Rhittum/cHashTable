@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include "rsg.h"
 
 #define HASHMAP_DEFAULT_CAPACITY 32
 
@@ -130,6 +131,13 @@ HashMap* createTable(int capacity) {
 	map->capacity = capacity;
 	map->size = 0;
 	map->buckets = calloc(capacity, sizeof(HashEntry));
+	if (get_secure_random_bytes(map->secretKey, sizeof(map->secretKey)) != 0) {
+		// Fallback: If OS secure random generation fails
+		#include <time.h>
+		uint64_t low_grade_seed = (uint64_t)time(NULL);
+		map->secretKey[0] = low_grade_seed ^ 0xFAFBFCFDFEFFFF00ULL;
+		map->secretKey[1] = low_grade_seed * 0xBF58476D1CE4E5B9ULL;
+	}
 
 	if (!map->buckets) {
 		free(map);
