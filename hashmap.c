@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -6,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include "rsg.h"
+#include "generic_swap.h"
 
 #define HASHMAP_DEFAULT_CAPACITY 32
 
@@ -44,6 +46,8 @@ typedef struct {
 	uint64_t secretKey[2];
 } HashMap;
 
+static void resize(HashMap *map, uint32_t new_capacity);
+
 uint64_t fmix64(uint64_t x) {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccd;
@@ -80,7 +84,7 @@ uint64_t siphash13(const uint8_t *key, size_t len, uint64_t k0, uint64_t k1) {
 		v0^=m;
 	}
 
-	uint64_t last_block = (uint64_t)(len && 0xff) << 56;
+	uint64_t last_block = (uint64_t)(len & 0xff) << 56;
 	switch (len & 7) {
 		case 7: last_block |= (uint64_t)p[6] << 48;
 		case 6: last_block |= (uint64_t)p[5] << 40;
@@ -145,6 +149,94 @@ HashMap* createTable(int capacity) {
 	}
 
 	return map;
+}
+
+void map_insert(HashMap *map, const char *key, void* value) {
+	assert(map!=NULL);
+
+	if ((map->size + 1)*10 >= map->capacity*7) {
+		resize(map, map->capacity*2);
+	}
+
+	uint32_t bucketIdx = getBucketIndex(map, key);
+
+	char* current_key = strdup(key);
+	void* current_value = value;
+	uint32_t current_psl = 0;
+
+	while (true) {
+		HashEntry *slot = &map->buckets[bucketIdx];
+
+		if (slot->state == EMPTY) {
+			slot->key = current_key;
+			slot->value = current_value;
+			slot->state = OCCUPIED;
+			slot->psl = current_psl;
+
+			map->size++;
+			return;
+		}
+
+		if (slot->state == OCCUPIED && strcmp(slot->key, current_key)==0) {
+			free(current_key);
+			slot->value = current_value;
+			return;
+		}
+
+		if (current_psl > slot->psl) {
+			SWAP(slot->key, current_key);
+			SWAP(slot->value, current_value);
+			SWAP(slot->psl, current_psl);
+		}
+
+		bucketIdx = (bucketIdx + 1) & (map->capacity - 1);
+		current_psl++;
+	}
+}
+
+void* map_get(HashMap *map, const char *key) {
+	assert(map!=NULL);
+
+	uint32_t bucketIdx = getBucketIndex(map, key);
+	uint32_t current_psl = 0;
+
+	while (true) {
+		HashEntry *slot = &map->buckets[bucketIdx];
+
+		if (slot->state == EMPTY) {
+			return NULL;
+		}
+
+		if (current_psl > slot->psl) {
+			return NULL;
+		}
+
+		if (slot->psl == OCCUPIED && strcmp(slot->key, key)==0) {
+			return slot->value;
+		}
+		bucketIdx = (bucketIdx+1)&(map->capacity-1);
+		current_psl++;
+	}
+}
+
+void resize(HashMap *map, uint32_t new_capacity) {
+	uint32_t old_capacity = map->capacity;
+	HashEntry *old_buckets = map->buckets;
+
+	HashEntry *new_buckets = calloc(new_capacity, sizeof(HashEntry));
+	if (!new_buckets) return;
+
+	map->buckets = new_buckets;
+	map->capacity = new_capacity;
+	map->size = 0;
+
+	for (uint32_t i=0; i < old_capacity; i++) {
+		if (old_buckets[i].state == OCCUPIED) {
+			map_insert(map, old_buckets[i].key, old_buckets[i].value);
+			free(old_buckets[i].key);
+		}
+	}
+
 }
 
 int main() {
