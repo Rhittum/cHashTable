@@ -288,6 +288,8 @@ void resize(HashMap *map, uint32_t new_capacity) {
 			free(old_buckets[i].key);
 		}
 	}
+
+	free(old_buckets);
 }
 
 void map_destroy(HashMap *map) {
@@ -335,23 +337,4 @@ double map_getLoadFactor(HashMap *map) {
 	assert(map!=NULL);
 	if (map->capacity==0) return 0.0;
 	return (double)map->size/map->capacity;
-}
-
-int main() {
-	HashMap *map = createMap(20);
-
-	map_insert(map, "Rin", "1");
-	map_insert(map, "Apple", "2");
-	map_insert(map, "Bees", "33");
-
-	char *value = (char*)map_get(map, "Apple");
-	printf("value: %s\n",value);
-	value = (char*)map_get(map, "Bees");
-	printf("value: %s\n",value);
-
-	printf("Did key delete?: %s\n",map_delete(map, "Apple")?"Yes":"No");
-	printf("Checking for Apple element's existence:\n");
-	value = (char*)map_get(map, "Apple");
-	printf("value: %s\n",value);
-	return 0;
 }
