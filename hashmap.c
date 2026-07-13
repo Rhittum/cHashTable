@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -118,7 +119,7 @@ uint32_t getBucketIndex(HashMap *map, const char *key) {
 	return (uint32_t)(hash & (map->capacity - 1));
 }
 
-HashMap* createTable(int capacity) {
+HashMap* createMap(int capacity) {
 	if (capacity <= 0) capacity = HASHMAP_DEFAULT_CAPACITY;
 
 	capacity--;
@@ -197,6 +198,54 @@ void map_insert(HashMap *map, const char *key, void* value) {
 	}
 }
 
+bool map_delete(HashMap *map, const char* key) {
+	assert(map!=NULL);
+
+	uint32_t bucketIdx = getBucketIndex(map, key);
+	uint32_t current_psl = 0;
+
+	while (true) {
+		HashEntry *slot = &map->buckets[bucketIdx];
+
+		if (slot->state==EMPTY && current_psl > slot->psl) {
+			return false;
+		}
+
+		if (slot->state==OCCUPIED && strcmp(slot->key, key)==0) {
+			free(slot->key);
+			map->size--;
+
+			uint32_t nextIdx = (bucketIdx+1) & (map->capacity-1);
+
+			while (true) {
+				HashEntry *nextSlot = &map->buckets[nextIdx];
+
+				if (nextSlot->state==EMPTY || nextSlot->psl==0) {
+					slot->key = NULL;
+					slot->value = NULL;
+					slot->state = EMPTY;
+					slot->psl = 0;
+					break;
+				}
+
+				slot->key = nextSlot->key;
+				slot->value = nextSlot->value;
+				slot->state = nextSlot->state;
+				slot->psl = nextSlot->psl-1;
+
+				slot = nextSlot;
+
+				nextIdx = (nextIdx+1) & (map->capacity-1);
+			}
+
+			return true;
+		}
+
+		bucketIdx = (bucketIdx+1) & (map->capacity-1);
+		current_psl++;
+	}
+}
+
 void* map_get(HashMap *map, const char *key) {
 	assert(map!=NULL);
 
@@ -239,11 +288,57 @@ void resize(HashMap *map, uint32_t new_capacity) {
 			free(old_buckets[i].key);
 		}
 	}
+}
 
+void map_destroy(HashMap *map) {
+	if (!map) return;
+
+	for (int i=0; i<map->capacity; i++) {
+		if (map->buckets[i].state==OCCUPIED) {
+			free(map->buckets[i].key);
+		}
+	}
+
+	free(map->buckets);
+	free(map);
+}
+
+void map_clear(HashMap *map) {
+	assert(map!=NULL);
+
+	for (int i=0; i<map->capacity; i++) {
+		if (map->buckets[i].state==OCCUPIED) {
+			free(map->buckets[i].key);
+		}
+		map->buckets[i].key = NULL;
+		map->buckets[i].value = NULL;
+		map->buckets[i].state = EMPTY;
+		map->buckets[i].psl = 0;
+	}
+
+	map->size = 0;
+}
+
+bool map_contains(HashMap *map, const char *key) {
+	return map_get(map, key)!=NULL;
+}
+
+int map_getSize(HashMap *map) {
+	assert(map!=NULL);
+	return map->size;
+}
+int map_getCapacity(HashMap *map) {
+	assert(map!=NULL);
+	return map->capacity;
+}
+double map_getLoadFactor(HashMap *map) {
+	assert(map!=NULL);
+	if (map->capacity==0) return 0.0;
+	return (double)map->size/map->capacity;
 }
 
 int main() {
-	HashMap *map = createTable(20);
+	HashMap *map = createMap(20);
 
 	map_insert(map, "Rin", "1");
 	map_insert(map, "Apple", "2");
@@ -252,6 +347,11 @@ int main() {
 	char *value = (char*)map_get(map, "Apple");
 	printf("value: %s\n",value);
 	value = (char*)map_get(map, "Bees");
+	printf("value: %s\n",value);
+
+	printf("Did key delete?: %s\n",map_delete(map, "Apple")?"Yes":"No");
+	printf("Checking for Apple element's existence:\n");
+	value = (char*)map_get(map, "Apple");
 	printf("value: %s\n",value);
 	return 0;
 }
